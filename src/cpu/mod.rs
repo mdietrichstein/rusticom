@@ -3,7 +3,8 @@ mod instructions;
 
 use self::types::OpCode;
 use self::types::Status;
-use self::types::InstructionOp;
+use self::types::NoArgumentInstructionOp;
+use self::types::SingleArgumentInstructionOp;
 use self::types::AdressingMode;
 use self::types::InstructionMap;
 use self::instructions::Instruction;
@@ -38,7 +39,7 @@ struct Bus {
 
 impl MOS6502Cpu {
     pub fn new() -> Self {
-        let mut cpu = MOS6502Cpu {
+        MOS6502Cpu {
             a: 0,
             x: 0,
             y: 0,
@@ -47,17 +48,7 @@ impl MOS6502Cpu {
             status: 0,
             memory: [0; 0xFFFF],
             instructions: create_instruction_map()
-        };
-
-        cpu.instructions[0xA9] = Instruction::Valid {
-            op_code: 0xA9,
-            mnemonic: "LDA",
-            cycles: 2,
-            adressing_mode: &Self::adressing_mode_immediate,
-            operation: &Self::load_accumulator,
-        };
-
-        cpu
+        }
     }
 
     pub fn run(&mut self, program: Vec<u8>) {
@@ -67,22 +58,45 @@ impl MOS6502Cpu {
             let op = program[self.pc as usize];
             self.pc += 1;
     
-            let instruction = &self.instructions[op as usize];
+            let instruction = self.instructions[op as usize];
 
             match instruction {
                 Instruction::Invalid => panic!("Invalid instruction: 0x{:02X}", op),
-                Instruction::Valid { op_code, mnemonic, cycles, operation, adressing_mode } =>  (operation)(&self)
+                Instruction::NoArgument { op_code, mnemonic, cycles, operation } =>  {
+                    (operation)(self)
+                },
+                Instruction::SingleArgument { op_code, mnemonic, cycles, operation, adressing_mode } =>  {
+                    let argument = adressing_mode(self);
+                    (operation)(self, argument)
+                }
             }
         }
     }
         
-    fn load_accumulator(&self) {
+    fn load_accumulator(&mut self, argument: u8) {
+        // self.a = 
         println!("LDA")
     }
 
-    fn adressing_mode_immediate(&self) -> u8 {
-        println!("immediate");
-        42
+    fn adressing_mode_immediate(&mut self) -> u8 {
+        let argument = self.memory[self.pc as usize];
+        
+        self.pc += 1;
+        argument
     }
 
+    fn adressing_mode_zero_page(&mut self) -> u8 {
+        let adress = self.memory[self.pc as usize];
+        let argument = self.memory[adress as usize];
+
+        self.pc += 1;
+        argument
+    }
+
+    fn adressing_mode_zero_page_x(&mut self) -> u8 {
+        let adress = self.memory[self.pc as usize];
+        let argument = self.memory[adress.wrapping_add(self.x) as usize];
+        self.pc += 1;
+        argument
+    }
 }
