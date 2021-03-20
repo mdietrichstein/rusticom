@@ -6,4 +6,5 @@ pub type OpCode = u8;
 pub type Status = u8;
 pub type NoArgumentInstructionOp = Fn(&mut MOS6502Cpu);
 pub type SingleArgumentInstructionOp = Fn(&mut MOS6502Cpu, u8);
-pub type AdressingMode = Fn(&mut MOS6502Cpu) -> u8;
+pub type AddressLookupResult = (u8, bool);
+pub type AddressingMode = Fn(&mut MOS6502Cpu) -> AddressLookupResult;
