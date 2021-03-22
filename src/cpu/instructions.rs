@@ -9,9 +9,10 @@ use super::types::InstructionMap;
 pub enum Instruction {
     Invalid,
     NoArgument { op_code: OpCode, mnemonic: &'static str, operation: &'static NoArgumentInstructionOp, cycles: u8 },
-    SingleArgument { op_code: OpCode, mnemonic: &'static str, operation: &'static SingleArgumentInstructionOp, adressing_mode: &'static AddressingMode, cycles: u8 },
+    SingleArgument { op_code: OpCode, mnemonic: &'static str, operation: &'static SingleArgumentInstructionOp, addressing_mode: &'static AddressingMode, cycles: u8 },
 }
 
+#[allow(non_snake_case)]
 pub fn create_instruction_map() -> InstructionMap {
     // Define all instructions as invalid and the add the implemented ones, one-by-one
     
@@ -31,7 +32,7 @@ pub fn create_instruction_map() -> InstructionMap {
         op_code: 0xA9,
         mnemonic: "LDA",
         operation: LDA,
-        adressing_mode: IMM,
+        addressing_mode: IMM,
         cycles: 2,
     };
     

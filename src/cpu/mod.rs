@@ -1,4 +1,6 @@
 mod types;
+mod memory;
+mod bus;
 mod instructions;
 
 use self::types::OpCode;
@@ -10,8 +12,9 @@ use self::types::InstructionMap;
 use self::types::AddressLookupResult;
 use self::instructions::Instruction;
 use self::instructions::create_instruction_map;
-
-use std::ops::RangeInclusive;
+use self::memory::Memory;
+use self::memory::IntoAddress;
+use self::bus::Bus;
     
 pub struct MOS6502Cpu {
     a: u8,
@@ -20,37 +23,17 @@ pub struct MOS6502Cpu {
     pc: u16,
     sp: u8,
     status: Status,
-    memory: [u8; 0xFFFF],
     instructions: InstructionMap,
+    pub bus: Bus,
 }
 
-trait Memory {
-    fn write(&mut self, address: u16, data: u8);
-    fn read(&mut self, address: u16) -> u8;
-}
-
-const MEMORY_RANGE_RAM: RangeInclusive<u16> = 0 ..= 0x1FFF;
-
-struct Bus {
-    memory: [u8; 0xFFFF]
-    // connect devices (meory, ppu, etc.)
-}
-
-impl Bus {
-    fn new() -> Self {
-        Bus {
-            memory: [0; 0xFFFF]
-        }
-    }
-}
-
-impl Memory for Bus {
-    fn write(&mut self, address: u16, data: u8) {
-        self.memory[address as usize] = data;
+impl Memory for MOS6502Cpu {
+    fn write<A: IntoAddress>(&mut self, address: A, data: u8) {
+        self.bus.write(address, data);
     }
 
-    fn read(&mut self, address: u16) -> u8 {
-        self.memory[address as usize]
+    fn read<A: IntoAddress>(&self, address: A) -> u8 {
+        self.bus.read(address)
     }
 }
 
@@ -63,7 +46,7 @@ impl MOS6502Cpu {
             pc: 0,
             sp: 0,
             status: 0,
-            memory: [0; 0xFFFF],
+            bus: Bus::new(),
             instructions: create_instruction_map()
         }
     }
@@ -82,49 +65,48 @@ impl MOS6502Cpu {
                 Instruction::NoArgument { op_code, mnemonic, cycles, operation } =>  {
                     (operation)(self)
                 },
-                Instruction::SingleArgument { op_code, mnemonic, cycles, operation, adressing_mode } =>  {
-                    let (argument, pages_crossed) = adressing_mode(self);
+                Instruction::SingleArgument { op_code, mnemonic, cycles, operation, addressing_mode } =>  {
+                    let (argument, pages_crossed) = addressing_mode(self);
                     (operation)(self, argument)
                 }
             }
         }
     }
         
-    // Load/Store Operations
+    //#region Instructions
 
     fn load_accumulator(&mut self, argument: u8) {
         self.a = argument;
         println!("LDA")
     }
 
-    // Logical Operations
 
     fn and(&mut self, argument: u8) {
         self.a &= argument
     }
 
-    // Addressing Modes
+    //#endregion
 
-    //# region
+    //#region Addressing Modes
+
     fn addressing_mode_immediate(&mut self) -> AddressLookupResult {
-        let argument = self.memory[self.pc as usize];
+        let argument = self.read(self.pc);
         self.pc += 1;
 
         (argument, false)
     }
-    //# endregion
 
     fn addressing_mode_zero_page(&mut self) -> AddressLookupResult {
-        let address = self.memory[self.pc as usize];
-        let argument = self.memory[address as usize];
+        let address = self.read(self.pc);
+        let argument = self.read(address);
         self.pc += 1;
 
         (argument, false)
     }
 
     fn addressing_mode_zero_page_x(&mut self) -> AddressLookupResult {
-        let address = self.memory[self.pc as usize];
-        let argument = self.memory[address.wrapping_add(self.x) as usize];
+        let address = self.read(self.pc);
+        let argument = self.read(address);
 
         self.pc += 1;
 
@@ -132,8 +114,8 @@ impl MOS6502Cpu {
     }
 
     fn addressing_mode_zero_page_y(&mut self) -> AddressLookupResult {
-        let address = self.memory[self.pc as usize];
-        let argument = self.memory[address.wrapping_add(self.y) as usize];
+        let address = self.read(self.pc);
+        let argument = self.read(address.wrapping_add(self.y));
 
         self.pc += 1;
 
@@ -141,106 +123,107 @@ impl MOS6502Cpu {
     }
 
     fn addressing_mode_absolute(&mut self) -> AddressLookupResult {
-        let low_byte = self.memory[self.pc as usize];
-        let high_byte = self.memory[(self.pc + 1) as usize];
+        let low_byte = self.read(self.pc);
+        let high_byte = self.read(self.pc + 1);
 
         self.pc += 2;
 
         let address = ((high_byte as u16) << 8) | low_byte as u16;
-        let argument = self.memory[address as usize];
+        let argument = self.read(address);
 
         (argument, false)
     }
 
     fn addressing_mode_absolute_x(&mut self) -> AddressLookupResult {
-        let low_byte = self.memory[self.pc as usize];
-        let high_byte = self.memory[(self.pc + 1) as usize];
+        let low_byte = self.read(self.pc);
+        let high_byte = self.read(self.pc + 1);
 
         self.pc += 2;
 
         let address = (((high_byte as u16) << 8) | low_byte as u16) + self.x as u16;
-        let argument = self.memory[address as usize];
+        let argument = self.read(address);
         let pages_crossed = high_byte != (address >> 8) as u8;
 
         (argument, pages_crossed)
     }
 
     fn addressing_mode_absolute_y(&mut self) -> AddressLookupResult {
-        let low_byte = self.memory[self.pc as usize];
-        let high_byte = self.memory[(self.pc + 1) as usize];
+        let low_byte = self.read(self.pc);
+        let high_byte = self.read(self.pc + 1);
 
         self.pc += 2;
 
         let address = (((high_byte as u16) << 8) | low_byte as u16) + self.y as u16;
-        let argument = self.memory[address as usize];
+        let argument = self.read(address);
         let pages_crossed = high_byte != (address >> 8) as u8;
 
         (argument, pages_crossed)
     }
 
     fn addressing_mode_indirect(&mut self) -> AddressLookupResult {
-        let pointer_low_byte = self.memory[self.pc as usize];
-        let pointer_high_byte = self.memory[(self.pc + 1) as usize];
+        let pointer_low_byte = self.read(self.pc);
+        let pointer_high_byte = self.read(self.pc + 1);
 
         self.pc += 2;
 
-        let pointer = (((pointer_high_byte as u16) << 8) | pointer_low_byte as u16) as usize;
+        let pointer = ((pointer_high_byte as u16) << 8) | pointer_low_byte as u16;
 
-        let low_byte = self.memory[pointer];
+        let low_byte = self.read(pointer);
 
         let high_byte =  if pointer_low_byte == 0xFF {
             // Simulate CPU Bug: if the low byte is 0xFF, the carry bit is not propagated into the high byte when adding +1 to the pointer
-            self.memory[pointer & 0xFF00]
+            self.read(pointer & 0xFF00)
         } else {            
-            self.memory[pointer + 1]           
+            self.read(pointer + 1)        
         };
 
         let address = ((high_byte as u16) << 8) | low_byte as u16;
 
-        let argument = self.memory[address as usize];
+        let argument = self.read(address);
 
         (argument, false)
     }
 
     fn addressing_mode_indirect_x(&mut self) -> AddressLookupResult {
-        let zero_page_pointer = self.memory[self.pc as usize].wrapping_add(self.x);
+        let zero_page_pointer = self.read(self.pc).wrapping_add(self.x);
 
         // Both bytes must be located in page zero
-        let low_byte = self.memory[zero_page_pointer as usize];
-        let high_byte = self.memory[zero_page_pointer.wrapping_add(1)  as usize];
+        let low_byte = self.read(zero_page_pointer);
+        let high_byte = self.read(zero_page_pointer.wrapping_add(1));
 
         self.pc += 1;
 
         let address = ((high_byte as u16) << 8)  | low_byte as u16;
 
-        let argument = self.memory[address as usize];
+        let argument = self.read(address);
         (argument, false)
     }
 
     fn addressing_mode_indirect_y(&mut self) -> AddressLookupResult {
-        let zero_page_pointer = self.memory[self.pc as usize] as usize;
-        let low_byte = self.memory[zero_page_pointer];
-        let high_byte = self.memory[zero_page_pointer.wrapping_add(1)];
+        let zero_page_pointer = self.read(self.pc);
+        let low_byte = self.read(zero_page_pointer);
+        let high_byte = self.read(zero_page_pointer.wrapping_add(1));
 
         self.pc += 1;
 
         let address = (((high_byte as u16) << 8) | low_byte as u16) + self.y as u16;
-        let argument = self.memory[address as usize];
+        let argument = self.read(address);
         let pages_crossed = high_byte != (address >> 8) as u8;
 
         (argument, pages_crossed)
     }
 
-    fn addressing_mode_relative(&mut self) -> AddressLookupResult {
-        // cast to i8 since offset can be negative
-        let relative_pc_offset = self.memory[self.pc as usize] as i8;
+    // fn addressing_mode_relative(&mut self) -> AddressLookupResult {
+    //     // cast to i8 since offset can be negative
+    //     let relative_pc_offset = self.memory[self.pc as usize] as i8;
         
-        // increment program counter before adding the offset
-        self.pc += 1;
+    //     // increment program counter before adding the offset
+    //     self.pc += 1;
 
-        let address = ((self.pc as i32) + (relative_pc_offset as i32)) as usize;
-        let argument = self.memory[address as usize];
+    //     let address = ((self.pc as i32) + (relative_pc_offset as i32)) as usize;
         
-        (argument, false)
-    }
+    //     (address, false)
+    // }
+
+    //#endregion
 }
