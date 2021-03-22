@@ -24,7 +24,7 @@ pub struct MOS6502Cpu {
     sp: u8,
     status: Status,
     instructions: InstructionMap,
-    pub bus: Bus,
+    bus: Bus,
 }
 
 impl Memory for MOS6502Cpu {
