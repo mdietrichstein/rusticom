@@ -66,23 +66,32 @@ impl MOS6502Cpu {
                     (operation)(self)
                 },
                 Instruction::SingleArgument { op_code, mnemonic, cycles, operation, addressing_mode } =>  {
-                    let (argument, pages_crossed) = addressing_mode(self);
-                    (operation)(self, argument)
+                    (operation)(self, addressing_mode)
                 }
             }
         }
     }
         
+    fn fetch_argument(&mut self, fetch_address: &'static AddressingMode) -> (u8, bool) {
+        let (address, pages_crossed) = fetch_address(self);
+        (self.read(address), pages_crossed)
+    }
+
+    //#region Flags
+    //#endregion
+
     //#region Instructions
 
-    fn load_accumulator(&mut self, argument: u8) {
+    fn load_accumulator(&mut self, fetch_address: &'static AddressingMode) {
+        let (argument, pages_crossed) = self.fetch_argument(fetch_address);
         self.a = argument;
         println!("LDA")
     }
 
 
-    fn and(&mut self, argument: u8) {
-        self.a &= argument
+    fn and(&mut self, fetch_address: &'static AddressingMode) {
+        let (argument, pages_crossed) = self.fetch_argument(fetch_address);
+        self.a &= argument;
     }
 
     //#endregion
@@ -90,36 +99,33 @@ impl MOS6502Cpu {
     //#region Addressing Modes
 
     fn addressing_mode_immediate(&mut self) -> AddressLookupResult {
-        let argument = self.read(self.pc);
+        let address = self.pc;
         self.pc += 1;
 
-        (argument, false)
+        (address, false)
     }
 
     fn addressing_mode_zero_page(&mut self) -> AddressLookupResult {
         let address = self.read(self.pc);
-        let argument = self.read(address);
         self.pc += 1;
 
-        (argument, false)
+        (address as u16, false)
     }
 
     fn addressing_mode_zero_page_x(&mut self) -> AddressLookupResult {
-        let address = self.read(self.pc);
-        let argument = self.read(address);
+        let address = self.read(self.pc).wrapping_add(self.x);
 
         self.pc += 1;
 
-        (argument, false)
+        (address as u16, false)
     }
 
     fn addressing_mode_zero_page_y(&mut self) -> AddressLookupResult {
-        let address = self.read(self.pc);
-        let argument = self.read(address.wrapping_add(self.y));
+        let address = self.read(self.pc).wrapping_add(self.y);
 
         self.pc += 1;
 
-        (argument, false)
+        (address as u16, false)
     }
 
     fn addressing_mode_absolute(&mut self) -> AddressLookupResult {
@@ -129,9 +135,8 @@ impl MOS6502Cpu {
         self.pc += 2;
 
         let address = ((high_byte as u16) << 8) | low_byte as u16;
-        let argument = self.read(address);
 
-        (argument, false)
+        (address, false)
     }
 
     fn addressing_mode_absolute_x(&mut self) -> AddressLookupResult {
@@ -141,10 +146,9 @@ impl MOS6502Cpu {
         self.pc += 2;
 
         let address = (((high_byte as u16) << 8) | low_byte as u16) + self.x as u16;
-        let argument = self.read(address);
         let pages_crossed = high_byte != (address >> 8) as u8;
 
-        (argument, pages_crossed)
+        (address, pages_crossed)
     }
 
     fn addressing_mode_absolute_y(&mut self) -> AddressLookupResult {
@@ -154,10 +158,9 @@ impl MOS6502Cpu {
         self.pc += 2;
 
         let address = (((high_byte as u16) << 8) | low_byte as u16) + self.y as u16;
-        let argument = self.read(address);
         let pages_crossed = high_byte != (address >> 8) as u8;
 
-        (argument, pages_crossed)
+        (address, pages_crossed)
     }
 
     fn addressing_mode_indirect(&mut self) -> AddressLookupResult {
@@ -179,9 +182,7 @@ impl MOS6502Cpu {
 
         let address = ((high_byte as u16) << 8) | low_byte as u16;
 
-        let argument = self.read(address);
-
-        (argument, false)
+        (address, false)
     }
 
     fn addressing_mode_indirect_x(&mut self) -> AddressLookupResult {
@@ -195,8 +196,7 @@ impl MOS6502Cpu {
 
         let address = ((high_byte as u16) << 8)  | low_byte as u16;
 
-        let argument = self.read(address);
-        (argument, false)
+        (address, false)
     }
 
     fn addressing_mode_indirect_y(&mut self) -> AddressLookupResult {
@@ -207,23 +207,22 @@ impl MOS6502Cpu {
         self.pc += 1;
 
         let address = (((high_byte as u16) << 8) | low_byte as u16) + self.y as u16;
-        let argument = self.read(address);
         let pages_crossed = high_byte != (address >> 8) as u8;
 
-        (argument, pages_crossed)
+        (address, pages_crossed)
     }
 
-    // fn addressing_mode_relative(&mut self) -> AddressLookupResult {
-    //     // cast to i8 since offset can be negative
-    //     let relative_pc_offset = self.memory[self.pc as usize] as i8;
+    fn addressing_mode_relative(&mut self) -> AddressLookupResult {
+        // cast to i8 since offset can be negative
+        let relative_pc_offset = self.read(self.pc) as i8;
         
-    //     // increment program counter before adding the offset
-    //     self.pc += 1;
+        // increment program counter before adding the offset
+        self.pc += 1;
 
-    //     let address = ((self.pc as i32) + (relative_pc_offset as i32)) as usize;
+        let address = ((self.pc as i32) + (relative_pc_offset as i32)) as u16;
         
-    //     (address, false)
-    // }
+        (address, false)
+    }
 
     //#endregion
 }
